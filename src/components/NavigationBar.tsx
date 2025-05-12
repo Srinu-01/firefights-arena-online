@@ -1,14 +1,19 @@
 
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { Menu, X, Trophy, User, Calendar, DollarSign } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const NavigationBar = () => {
   const [isOpen, setIsOpen] = useState(false);
+  const location = useLocation();
 
   const toggleMenu = () => {
     setIsOpen(!isOpen);
+  };
+
+  const isActive = (path: string) => {
+    return location.pathname === path ? "text-gaming-orange" : "text-white";
   };
 
   return (
@@ -23,21 +28,23 @@ const NavigationBar = () => {
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center space-x-6">
-            <Link to="/" className="text-white hover:text-gaming-orange transition-colors font-gaming uppercase font-bold">
+            <Link to="/" className={`${isActive('/')} hover:text-gaming-orange transition-colors font-gaming uppercase font-bold`}>
               Home
             </Link>
-            <Link to="/tournaments" className="text-white hover:text-gaming-orange transition-colors font-gaming uppercase font-bold">
+            <Link to="/tournaments" className={`${isActive('/tournaments')} hover:text-gaming-orange transition-colors font-gaming uppercase font-bold`}>
               Tournaments
             </Link>
-            <Link to="/leaderboard" className="text-white hover:text-gaming-orange transition-colors font-gaming uppercase font-bold">
+            <Link to="/leaderboard" className={`${isActive('/leaderboard')} hover:text-gaming-orange transition-colors font-gaming uppercase font-bold`}>
               Leaderboard
             </Link>
-            <Link to="/register" className="text-white hover:text-gaming-orange transition-colors font-gaming uppercase font-bold">
+            <Link to="/register" className={`${isActive('/register')} hover:text-gaming-orange transition-colors font-gaming uppercase font-bold`}>
               Register
             </Link>
-            <Button className="gaming-button">
-              Login
-            </Button>
+            <Link to="/login">
+              <Button className="gaming-button">
+                Login
+              </Button>
+            </Link>
           </div>
 
           {/* Mobile menu button */}
@@ -57,21 +64,23 @@ const NavigationBar = () => {
       {isOpen && (
         <div className="md:hidden gaming-gradient animate-fade-in absolute w-full px-4 py-2 shadow-lg">
           <div className="flex flex-col space-y-3 py-3">
-            <Link to="/" className="text-white hover:text-gaming-orange transition-colors font-gaming uppercase font-bold flex items-center space-x-2">
+            <Link to="/" className={`${isActive('/')} hover:text-gaming-orange transition-colors font-gaming uppercase font-bold flex items-center space-x-2`} onClick={() => setIsOpen(false)}>
               <Trophy size={20} /> <span>Home</span>
             </Link>
-            <Link to="/tournaments" className="text-white hover:text-gaming-orange transition-colors font-gaming uppercase font-bold flex items-center space-x-2">
+            <Link to="/tournaments" className={`${isActive('/tournaments')} hover:text-gaming-orange transition-colors font-gaming uppercase font-bold flex items-center space-x-2`} onClick={() => setIsOpen(false)}>
               <Calendar size={20} /> <span>Tournaments</span>
             </Link>
-            <Link to="/leaderboard" className="text-white hover:text-gaming-orange transition-colors font-gaming uppercase font-bold flex items-center space-x-2">
+            <Link to="/leaderboard" className={`${isActive('/leaderboard')} hover:text-gaming-orange transition-colors font-gaming uppercase font-bold flex items-center space-x-2`} onClick={() => setIsOpen(false)}>
               <Trophy size={20} /> <span>Leaderboard</span>
             </Link>
-            <Link to="/register" className="text-white hover:text-gaming-orange transition-colors font-gaming uppercase font-bold flex items-center space-x-2">
+            <Link to="/register" className={`${isActive('/register')} hover:text-gaming-orange transition-colors font-gaming uppercase font-bold flex items-center space-x-2`} onClick={() => setIsOpen(false)}>
               <User size={20} /> <span>Register</span>
             </Link>
-            <Button className="gaming-button flex items-center justify-center space-x-2">
-              <DollarSign size={18} /> <span>Login</span>
-            </Button>
+            <Link to="/login" onClick={() => setIsOpen(false)}>
+              <Button className="gaming-button flex items-center justify-center space-x-2">
+                <DollarSign size={18} /> <span>Login</span>
+              </Button>
+            </Link>
           </div>
         </div>
       )}
