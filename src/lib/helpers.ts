@@ -31,3 +31,12 @@ export const formatDate = (dateString: string): string => {
     minute: '2-digit'
   });
 };
+
+// Adding formatTime function that was missing
+export const formatTime = (dateString: string): string => {
+  const date = new Date(dateString);
+  return date.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+};

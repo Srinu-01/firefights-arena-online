@@ -1,17 +1,8 @@
-
 import { useState } from 'react';
 import TournamentCard, { TournamentProps } from './TournamentCard';
 import { motion } from 'framer-motion';
 
-// Sample data for demonstration
-const sampleTournaments: TournamentProps[] = [
-  { rank: 1, teamName: 'Elite Killers', playerName: 'SharpShooter', kills: 187, matches: 42, wins: 16, points: 1245 },
-  { rank: 2, teamName: 'Phoenix Squad', playerName: 'FireRaider', kills: 165, matches: 39, wins: 13, points: 1120 },
-  { rank: 3, teamName: 'Shadow Warriors', playerName: 'NightHawk', kills: 158, matches: 41, wins: 12, points: 1050 },
-  { rank: 4, teamName: 'Dragon Force', playerName: 'DragonFist', kills: 152, matches: 40, wins: 11, points: 980 },
-];
-
-// Sample data for demonstration
+// Sample data for tournaments with correct type structure
 const sampleTournamentsData: TournamentProps[] = [
   {
     id: 'tourney_001',
