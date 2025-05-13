@@ -10,14 +10,20 @@ interface PaymentStepProps {
   updateFormData: (data: Partial<RegistrationData>) => void;
   nextStep: () => void;
   prevStep: () => void;
+  handleSubmit: (receiptFile: File | null) => Promise<void>;
+  isLoading: boolean;
+  upiLink: string;
 }
 
-const PaymentStep = ({ formData, updateFormData, nextStep, prevStep }: PaymentStepProps) => {
-  const [isUploading, setIsUploading] = useState(false);
+const PaymentStep = ({ 
+  formData, 
+  prevStep, 
+  handleSubmit, 
+  isLoading,
+  upiLink 
+}: PaymentStepProps) => {
   const [receipt, setReceipt] = useState<File | null>(null);
   const { toast } = useToast();
-
-  const upiLink = `upi://pay?pa=9849834102@ybl&pn=Govardhan&am=200&cu=INR&tn=200%20rs%20per%20squad`;
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -57,36 +63,7 @@ const PaymentStep = ({ formData, updateFormData, nextStep, prevStep }: PaymentSt
       return;
     }
 
-    setIsUploading(true);
-
-    try {
-      // In a real app, we'd upload the file to Firebase Storage here
-      // For now, we'll simulate an upload with a timeout
-      await new Promise(resolve => setTimeout(resolve, 1500));
-
-      // This would be the URL returned from Firebase Storage
-      const mockReceiptUrl = "https://firebasestorage.googleapis.com/v0/b/example/o/receipts%2Freceipt-123.jpg";
-      
-      updateFormData({
-        receiptUrl: mockReceiptUrl
-      });
-      
-      toast({
-        title: "Receipt Uploaded",
-        description: "Your payment receipt has been uploaded successfully."
-      });
-      
-      nextStep();
-    } catch (error) {
-      console.error('Error uploading receipt:', error);
-      toast({
-        title: "Upload Failed",
-        description: "There was an error uploading your receipt. Please try again.",
-        variant: "destructive"
-      });
-    } finally {
-      setIsUploading(false);
-    }
+    await handleSubmit(receipt);
   };
 
   const handlePayWithUPI = () => {
@@ -115,11 +92,11 @@ const PaymentStep = ({ formData, updateFormData, nextStep, prevStep }: PaymentSt
           </div>
           <div className="flex justify-between">
             <span className="text-gray-300">Tournament:</span>
-            <span className="text-white font-medium">Free Fire Arena</span>
+            <span className="text-white font-medium">{formData.tournamentName}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-gray-300">Entry Fee:</span>
-            <span className="text-white font-bold">₹200</span>
+            <span className="text-white font-bold">₹{formData.entryFee}</span>
           </div>
         </div>
         
@@ -132,7 +109,7 @@ const PaymentStep = ({ formData, updateFormData, nextStep, prevStep }: PaymentSt
               className="gaming-button-secondary w-full"
               onClick={handlePayWithUPI}
             >
-              Pay Entry Fee ₹200
+              Pay Entry Fee ₹{formData.entryFee}
             </Button>
           </div>
         </div>
@@ -184,9 +161,9 @@ const PaymentStep = ({ formData, updateFormData, nextStep, prevStep }: PaymentSt
               <Button 
                 onClick={handleUpload}
                 className="gaming-button"
-                disabled={!receipt || isUploading}
+                disabled={!receipt || isLoading}
               >
-                {isUploading ? "Uploading..." : "Upload & Complete Registration"}
+                {isLoading ? "Uploading..." : "Upload & Complete Registration"}
               </Button>
             </div>
           </div>
