@@ -1,541 +1,921 @@
-
-import { useState, useEffect } from 'react';
-import { collection, getDocs, doc, setDoc, deleteDoc, addDoc, DocumentData, QueryDocumentSnapshot } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from '@/lib/firebase';
-import { useToast } from '@/hooks/use-toast';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Calendar, Pencil, Trash, Plus, X, Clock, Users, DollarSign } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Textarea } from '@/components/ui/textarea';
+  collection,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  doc,
+  getDocs,
+  query,
+  orderBy,
+} from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import { v4 as uuidv4 } from 'uuid'; // This line should be added to the imports
+import { formatDate, formatTime } from '@/lib/helpers';
+import { Button } from '@/components/ui/button';
+import {
+  Table,
+  TableBody,
+  TableCaption,
+  TableCell,
+  TableFooter,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Calendar } from "@/components/ui/calendar"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import { cn } from "@/lib/utils"
+import { CalendarIcon } from "lucide-react"
+import { format } from "date-fns"
+import { useToast } from "@/hooks/use-toast"
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { AspectRatio } from '@/components/ui/aspect-ratio';
-import { v4 as uuidv4 } from 'uuid';
+} from "@/components/ui/select"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form"
+import { useForm } from "react-hook-form"
+import * as z from "zod"
+import { zodResolver } from "@hookform/resolvers/zod"
 
 interface Tournament {
   id: string;
   tournamentName: string;
-  entryFee: number;
-  tournamentType: 'Solo' | 'Duo' | 'Squad';
+  gameName: string;
+  platform: string;
+  startDate: string;
+  endDate: string;
   startDateTime: string;
+  endDateTime: string;
+  entryFee: number;
+  prizePool: number;
+  tournamentType: 'Solo' | 'Duo' | 'Squad';
   maxTeams: number;
-  status: 'Open' | 'Closed';
   description: string;
-  bannerImageURL: string;
+  rules: string;
+  status: 'Open' | 'Closed' | 'Completed';
+  winner?: string;
+  createdAt: string;
 }
+
+const formSchema = z.object({
+  tournamentName: z.string().min(3, {
+    message: "Tournament name must be at least 3 characters.",
+  }),
+  gameName: z.string().min(3, {
+    message: "Game name must be at least 3 characters.",
+  }),
+  platform: z.string().min(3, {
+    message: "Platform must be at least 3 characters.",
+  }),
+  startDate: z.string(),
+  endDate: z.string(),
+  startDateTime: z.string(),
+  endDateTime: z.string(),
+  entryFee: z.number(),
+  prizePool: z.number(),
+  tournamentType: z.enum(['Solo', 'Duo', 'Squad']),
+  maxTeams: z.number(),
+  description: z.string().min(10, {
+    message: "Description must be at least 10 characters.",
+  }),
+  rules: z.string().min(10, {
+    message: "Rules must be at least 10 characters.",
+  }),
+  status: z.enum(['Open', 'Closed', 'Completed']),
+});
 
 const AdminTournaments = () => {
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [currentTournament, setCurrentTournament] = useState<Tournament | null>(null);
-  const [bannerImage, setBannerImage] = useState<File | null>(null);
-  const [bannerPreview, setBannerPreview] = useState<string | null>(null);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const { toast } = useToast();
 
-  // Form state
-  const [formData, setFormData] = useState({
-    tournamentName: '',
-    entryFee: 0,
-    tournamentType: 'Squad' as 'Solo' | 'Duo' | 'Squad',
-    startDateTime: '',
-    maxTeams: 25,
-    status: 'Open' as 'Open' | 'Closed',
-    description: '',
-    bannerImageURL: '',
-  });
+  const form = useForm<z.infer<typeof formSchema>>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      tournamentName: "",
+      gameName: "",
+      platform: "",
+      startDate: "",
+      endDate: "",
+      startDateTime: "",
+      endDateTime: "",
+      entryFee: 0,
+      prizePool: 0,
+      tournamentType: 'Solo',
+      maxTeams: 0,
+      description: "",
+      rules: "",
+      status: 'Open',
+    },
+  })
 
-  useEffect(() => {
-    fetchTournaments();
-  }, []);
-
-  const fetchTournaments = async () => {
+  async function getTournaments() {
     setLoading(true);
     try {
-      const tournamentCollection = collection(db, 'tournaments');
-      const tournamentSnapshot = await getDocs(tournamentCollection);
-      const tournamentList = tournamentSnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Tournament[];
-      setTournaments(tournamentList);
+      const tournamentsCollection = collection(db, 'tournaments');
+      const tournamentsQuery = query(tournamentsCollection, orderBy('createdAt', 'desc'));
+      const tournamentsSnapshot = await getDocs(tournamentsQuery);
+      const tournamentsList = tournamentsSnapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          tournamentName: data.tournamentName,
+          gameName: data.gameName,
+          platform: data.platform,
+          startDate: data.startDate,
+          endDate: data.endDate,
+          startDateTime: data.startDateTime,
+          endDateTime: data.endDateTime,
+          entryFee: data.entryFee,
+          prizePool: data.prizePool,
+          tournamentType: data.tournamentType,
+          maxTeams: data.maxTeams,
+          description: data.description,
+          rules: data.rules,
+          status: data.status,
+          winner: data.winner,
+          createdAt: data.createdAt,
+        };
+      });
+      setTournaments(tournamentsList as Tournament[]);
     } catch (error) {
       console.error("Error fetching tournaments:", error);
       toast({
         title: "Error",
-        description: "Failed to load tournaments. Please try again.",
+        description: "Failed to fetch tournaments. Please try again.",
         variant: "destructive",
-      });
+      })
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setFormData({
-      ...formData,
-      [name]: name === 'entryFee' || name === 'maxTeams' ? Number(value) : value,
-    });
-  };
+  useEffect(() => {
+    getTournaments();
+  }, []);
 
-  const handleSelectChange = (name: string, value: string) => {
-    setFormData({
-      ...formData,
-      [name]: value,
-    });
-  };
-
-  const handleBannerChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      setBannerImage(file);
-      setBannerPreview(URL.createObjectURL(file));
-    }
-  };
-
-  const uploadBanner = async (): Promise<string> => {
-    if (!bannerImage) {
-      return currentTournament?.bannerImageURL || '';
-    }
-
-    const storageRef = ref(storage, `tournament-banners/${uuidv4()}`);
-    await uploadBytes(storageRef, bannerImage);
-    return await getDownloadURL(storageRef);
-  };
-
-  const handleAddEditTournament = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-
+  const onCreateTournament = async (values: z.infer<typeof formSchema>) => {
     try {
-      let bannerURL = formData.bannerImageURL;
-      
-      if (bannerImage) {
-        bannerURL = await uploadBanner();
-      }
-
-      const tournamentData = {
-        ...formData,
-        bannerImageURL: bannerURL,
+      const newTournament = {
+        ...values,
+        createdAt: new Date().toISOString(),
       };
-
-      if (currentTournament) {
-        // Update existing tournament
-        await setDoc(doc(db, 'tournaments', currentTournament.id), tournamentData);
-        toast({
-          title: "Success",
-          description: "Tournament updated successfully!",
-        });
-      } else {
-        // Add new tournament
-        await addDoc(collection(db, 'tournaments'), tournamentData);
-        toast({
-          title: "Success",
-          description: "Tournament created successfully!",
-        });
-      }
-
-      setIsDialogOpen(false);
-      clearForm();
-      fetchTournaments();
-    } catch (error) {
-      console.error("Error saving tournament:", error);
-      toast({
-        title: "Error",
-        description: "Failed to save tournament. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDeleteTournament = async () => {
-    if (!currentTournament) return;
-    
-    setLoading(true);
-    try {
-      await deleteDoc(doc(db, 'tournaments', currentTournament.id));
-      setIsDeleteDialogOpen(false);
-      setCurrentTournament(null);
-      
+      await addDoc(collection(db, 'tournaments'), newTournament);
       toast({
         title: "Success",
-        description: "Tournament deleted successfully!",
-      });
-      
-      fetchTournaments();
+        description: "Tournament created successfully.",
+      })
+      getTournaments(); // Refresh tournaments list
+    } catch (error) {
+      console.error("Error creating tournament:", error);
+      toast({
+        title: "Error",
+        description: "Failed to create tournament. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsCreateModalOpen(false);
+      form.reset();
+    }
+  };
+
+  const onOpenEditModal = (tournament: Tournament) => {
+    setSelectedTournament(tournament);
+    form.setValue("tournamentName", tournament.tournamentName);
+    form.setValue("gameName", tournament.gameName);
+    form.setValue("platform", tournament.platform);
+    form.setValue("startDate", tournament.startDate);
+    form.setValue("endDate", tournament.endDate);
+    form.setValue("startDateTime", tournament.startDateTime);
+    form.setValue("endDateTime", tournament.endDateTime);
+    form.setValue("entryFee", tournament.entryFee);
+    form.setValue("prizePool", tournament.prizePool);
+    form.setValue("tournamentType", tournament.tournamentType);
+    form.setValue("maxTeams", tournament.maxTeams);
+    form.setValue("description", tournament.description);
+    form.setValue("rules", tournament.rules);
+    form.setValue("status", tournament.status);
+    setIsEditModalOpen(true);
+  };
+
+  const onEditTournament = async (values: z.infer<typeof formSchema>) => {
+    if (!selectedTournament) return;
+    try {
+      const tournamentRef = doc(db, 'tournaments', selectedTournament.id);
+      await updateDoc(tournamentRef, values);
+      toast({
+        title: "Success",
+        description: "Tournament updated successfully.",
+      })
+      getTournaments(); // Refresh tournaments list
+    } catch (error) {
+      console.error("Error updating tournament:", error);
+      toast({
+        title: "Error",
+        description: "Failed to update tournament. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsEditModalOpen(false);
+      setSelectedTournament(null);
+      form.reset();
+    }
+  };
+
+  const onDeleteTournament = async (id: string) => {
+    try {
+      const tournamentRef = doc(db, 'tournaments', id);
+      await deleteDoc(tournamentRef);
+      toast({
+        title: "Success",
+        description: "Tournament deleted successfully.",
+      })
+      getTournaments(); // Refresh tournaments list
     } catch (error) {
       console.error("Error deleting tournament:", error);
       toast({
         title: "Error",
         description: "Failed to delete tournament. Please try again.",
         variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
+      })
     }
   };
 
-  const openAddDialog = () => {
-    clearForm();
-    setCurrentTournament(null);
-    setIsDialogOpen(true);
-  };
-
-  const openEditDialog = (tournament: Tournament) => {
-    setCurrentTournament(tournament);
-    setFormData({
-      tournamentName: tournament.tournamentName,
-      entryFee: tournament.entryFee,
-      tournamentType: tournament.tournamentType,
-      startDateTime: tournament.startDateTime,
-      maxTeams: tournament.maxTeams,
-      status: tournament.status,
-      description: tournament.description,
-      bannerImageURL: tournament.bannerImageURL,
-    });
-    setBannerPreview(tournament.bannerImageURL);
-    setIsDialogOpen(true);
-  };
-
-  const openDeleteDialog = (tournament: Tournament) => {
-    setCurrentTournament(tournament);
-    setIsDeleteDialogOpen(true);
-  };
-
-  const clearForm = () => {
-    setFormData({
-      tournamentName: '',
-      entryFee: 0,
-      tournamentType: 'Squad',
-      startDateTime: '',
-      maxTeams: 25,
-      status: 'Open',
-      description: '',
-      bannerImageURL: '',
-    });
-    setBannerImage(null);
-    setBannerPreview(null);
-  };
-
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold">Tournaments</h1>
-        <Button className="gaming-button flex items-center gap-2" onClick={openAddDialog}>
-          <Plus size={16} />
-          Add Tournament
-        </Button>
-      </div>
-
-      {loading ? (
-        <div className="py-10 text-center">Loading tournaments...</div>
-      ) : tournaments.length === 0 ? (
-        <div className="py-10 text-center">
-          <p className="text-gray-400 mb-4">No tournaments created yet.</p>
-          <Button className="gaming-button-secondary" onClick={openAddDialog}>
-            Create your first tournament
-          </Button>
+    <div>
+      <Helmet>
+        <title>Admin | Tournaments</title>
+      </Helmet>
+      <div className="container mx-auto py-8">
+        <div className="flex items-center justify-between mb-4">
+          <h1 className="text-2xl font-bold">Tournaments</h1>
+          <Button onClick={() => setIsCreateModalOpen(true)}>Create Tournament</Button>
         </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {tournaments.map((tournament) => (
-            <div key={tournament.id} className="gaming-card overflow-hidden">
-              <div className="relative h-48">
-                <img
-                  src={tournament.bannerImageURL || "https://dl.dir.freefiremobile.com/common/web_event/official2.ff.garena.all/202210/ce405ad07404fecfb3196b77822aec8b.jpg"}
-                  alt={tournament.tournamentName}
-                  className="w-full h-full object-cover"
-                />
-                <div className="absolute top-4 right-4 flex gap-2">
-                  <Button
-                    size="icon"
-                    variant="outline"
-                    className="bg-gaming-dark/80 border-gaming-orange/30 hover:bg-gaming-orange/60"
-                    onClick={() => openEditDialog(tournament)}
-                  >
-                    <Pencil size={16} />
-                  </Button>
-                  <Button
-                    size="icon"
-                    variant="outline"
-                    className="bg-gaming-dark/80 border-red-500/30 hover:bg-red-500/60"
-                    onClick={() => openDeleteDialog(tournament)}
-                  >
-                    <Trash size={16} />
-                  </Button>
-                </div>
-                <span className={`
-                  absolute bottom-4 left-4 px-3 py-1 text-xs font-bold rounded-full
-                  ${tournament.status === 'Open' ? 'bg-green-500' : 'bg-gray-500'}
-                `}>
-                  {tournament.status}
-                </span>
-              </div>
-              
-              <div className="p-6">
-                <h3 className="text-xl font-bold mb-2">{tournament.tournamentName}</h3>
-                
-                <div className="mb-4 flex flex-wrap gap-3">
-                  <div className="flex items-center gap-2 text-sm text-gray-300">
-                    <Calendar size={16} className="text-gaming-orange" />
-                    <span>{new Date(tournament.startDateTime).toLocaleDateString()}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm text-gray-300">
-                    <Clock size={16} className="text-gaming-orange" />
-                    <span>{new Date(tournament.startDateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm text-gray-300">
-                    <Users size={16} className="text-gaming-orange" />
-                    <span>{tournament.tournamentType}</span>
-                  </div>
-                </div>
-                
-                <div className="flex justify-between items-center mb-4">
-                  <div className="flex items-center gap-1">
-                    <DollarSign size={18} className="text-gaming-orange" />
-                    <span className="font-bold text-white">₹{tournament.entryFee}</span>
-                    <span className="text-gray-400 text-sm">Entry Fee</span>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-gray-400 text-sm">Max Teams:</span>
-                    <span className="ml-1 font-bold text-white">{tournament.maxTeams}</span>
-                  </div>
-                </div>
-                
-                <p className="text-sm text-gray-300 line-clamp-2">{tournament.description}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
 
-      {/* Add/Edit Tournament Dialog */}
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-2xl bg-gaming-darker text-white border-gaming-orange/20">
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-bold">
-              {currentTournament ? 'Edit Tournament' : 'Add Tournament'}
-            </DialogTitle>
-            <DialogDescription className="text-gray-400">
-              {currentTournament 
-                ? 'Update tournament details below.' 
-                : 'Fill in the details to create a new tournament.'}
-            </DialogDescription>
-          </DialogHeader>
-
-          <form onSubmit={handleAddEditTournament} className="space-y-6 py-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="tournamentName" className="block text-sm font-medium text-gray-300 mb-1">
-                  Tournament Name
-                </label>
-                <Input
-                  id="tournamentName"
+        <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle>Create Tournament</DialogTitle>
+              <DialogDescription>
+                Make changes to your tournament here. Click save when you're done.
+              </DialogDescription>
+            </DialogHeader>
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onCreateTournament)} className="space-y-4">
+                <FormField
+                  control={form.control}
                   name="tournamentName"
-                  value={formData.tournamentName}
-                  onChange={handleInputChange}
-                  className="bg-gaming-dark border-gaming-orange/30 text-white"
-                  required
-                />
-              </div>
-
-              <div>
-                <label htmlFor="entryFee" className="block text-sm font-medium text-gray-300 mb-1">
-                  Entry Fee (₹)
-                </label>
-                <Input
-                  id="entryFee"
-                  name="entryFee"
-                  type="number"
-                  min="0"
-                  value={formData.entryFee}
-                  onChange={handleInputChange}
-                  className="bg-gaming-dark border-gaming-orange/30 text-white"
-                  required
-                />
-              </div>
-
-              <div>
-                <label htmlFor="tournamentType" className="block text-sm font-medium text-gray-300 mb-1">
-                  Tournament Type
-                </label>
-                <Select 
-                  value={formData.tournamentType} 
-                  onValueChange={(value) => handleSelectChange('tournamentType', value)}
-                >
-                  <SelectTrigger className="bg-gaming-dark border-gaming-orange/30 text-white">
-                    <SelectValue placeholder="Select type" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-gaming-dark border-gaming-orange/30 text-white">
-                    <SelectItem value="Solo">Solo</SelectItem>
-                    <SelectItem value="Duo">Duo</SelectItem>
-                    <SelectItem value="Squad">Squad</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
-                <label htmlFor="startDateTime" className="block text-sm font-medium text-gray-300 mb-1">
-                  Start Date & Time
-                </label>
-                <Input
-                  id="startDateTime"
-                  name="startDateTime"
-                  type="datetime-local"
-                  value={formData.startDateTime}
-                  onChange={handleInputChange}
-                  className="bg-gaming-dark border-gaming-orange/30 text-white"
-                  required
-                />
-              </div>
-
-              <div>
-                <label htmlFor="maxTeams" className="block text-sm font-medium text-gray-300 mb-1">
-                  Maximum Teams
-                </label>
-                <Input
-                  id="maxTeams"
-                  name="maxTeams"
-                  type="number"
-                  min="1"
-                  value={formData.maxTeams}
-                  onChange={handleInputChange}
-                  className="bg-gaming-dark border-gaming-orange/30 text-white"
-                  required
-                />
-              </div>
-
-              <div>
-                <label htmlFor="status" className="block text-sm font-medium text-gray-300 mb-1">
-                  Status
-                </label>
-                <Select 
-                  value={formData.status} 
-                  onValueChange={(value) => handleSelectChange('status', value as 'Open' | 'Closed')}
-                >
-                  <SelectTrigger className="bg-gaming-dark border-gaming-orange/30 text-white">
-                    <SelectValue placeholder="Select status" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-gaming-dark border-gaming-orange/30 text-white">
-                    <SelectItem value="Open">Open</SelectItem>
-                    <SelectItem value="Closed">Closed</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div>
-              <label htmlFor="description" className="block text-sm font-medium text-gray-300 mb-1">
-                Description
-              </label>
-              <Textarea
-                id="description"
-                name="description"
-                value={formData.description}
-                onChange={handleInputChange}
-                className="bg-gaming-dark border-gaming-orange/30 text-white h-24"
-                required
-              />
-            </div>
-
-            <div>
-              <label htmlFor="bannerImage" className="block text-sm font-medium text-gray-300 mb-1">
-                Tournament Banner
-              </label>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
-                <div>
-                  {bannerPreview && (
-                    <div className="mt-2 rounded-md overflow-hidden">
-                      <AspectRatio ratio={16 / 9}>
-                        <img 
-                          src={bannerPreview} 
-                          alt="Banner preview" 
-                          className="w-full h-full object-cover"
-                        />
-                      </AspectRatio>
-                    </div>
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Tournament Name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Tournament Name" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
                   )}
-                </div>
-                <div className="flex flex-col gap-2">
-                  <Input
-                    id="bannerImage"
-                    type="file"
-                    accept="image/*"
-                    onChange={handleBannerChange}
-                    className="bg-gaming-dark border-gaming-orange/30 text-white"
+                />
+                <FormField
+                  control={form.control}
+                  name="gameName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Game Name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Game Name" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="platform"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Platform</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Platform" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="startDate"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-col">
+                        <FormLabel>Start Date</FormLabel>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <FormControl>
+                              <Button
+                                variant={"outline"}
+                                className={cn(
+                                  "w-[240px] pl-3 text-left font-normal",
+                                  !field.value && "text-muted-foreground"
+                                )}
+                              >
+                                {field.value ? (
+                                  format(new Date(field.value), "PPP")
+                                ) : (
+                                  <span>Pick a date</span>
+                                )}
+                                <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                              </Button>
+                            </FormControl>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <Calendar
+                              mode="single"
+                              selected={field.value ? new Date(field.value) : undefined}
+                              onSelect={(date) => field.onChange(date?.toISOString())}
+                              disabled={(date) =>
+                                date > new Date()
+                              }
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
+                        <FormMessage />
+                      </FormItem>
+                    )}
                   />
-                  <p className="text-xs text-gray-400">
-                    Recommended size: 1280x720 pixels. Max size: 2MB
-                  </p>
+                  <FormField
+                    control={form.control}
+                    name="endDate"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-col">
+                        <FormLabel>End Date</FormLabel>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <FormControl>
+                              <Button
+                                variant={"outline"}
+                                className={cn(
+                                  "w-[240px] pl-3 text-left font-normal",
+                                  !field.value && "text-muted-foreground"
+                                )}
+                              >
+                                {field.value ? (
+                                  format(new Date(field.value), "PPP")
+                                ) : (
+                                  <span>Pick a date</span>
+                                )}
+                                <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                              </Button>
+                            </FormControl>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <Calendar
+                              mode="single"
+                              selected={field.value ? new Date(field.value) : undefined}
+                              onSelect={(date) => field.onChange(date?.toISOString())}
+                              disabled={(date) =>
+                                date > new Date()
+                              }
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                 </div>
-              </div>
-            </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="startDateTime"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Start Time</FormLabel>
+                        <FormControl>
+                          <Input type="time" placeholder="Start Time" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="endDateTime"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>End Time</FormLabel>
+                        <FormControl>
+                          <Input type="time" placeholder="End Time" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="entryFee"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Entry Fee</FormLabel>
+                        <FormControl>
+                          <Input type="number" placeholder="Entry Fee" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="prizePool"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Prize Pool</FormLabel>
+                        <FormControl>
+                          <Input type="number" placeholder="Prize Pool" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <FormField
+                  control={form.control}
+                  name="tournamentType"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Tournament Type</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select a type" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="Solo">Solo</SelectItem>
+                          <SelectItem value="Duo">Duo</SelectItem>
+                          <SelectItem value="Squad">Squad</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="maxTeams"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Max Teams</FormLabel>
+                      <FormControl>
+                        <Input type="number" placeholder="Max Teams" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="description"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Description</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder="Tournament Description"
+                          className="resize-none"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="rules"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Rules</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder="Tournament Rules"
+                          className="resize-none"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="status"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Status</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select a status" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="Open">Open</SelectItem>
+                          <SelectItem value="Closed">Closed</SelectItem>
+                          <SelectItem value="Completed">Completed</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <DialogFooter>
+                  <Button type="submit">Create Tournament</Button>
+                </DialogFooter>
+              </form>
+            </Form>
+          </DialogContent>
+        </Dialog>
 
-            <div className="flex justify-end gap-3">
-              <Button 
-                type="button" 
-                variant="outline" 
-                onClick={() => setIsDialogOpen(false)}
-                className="border-gaming-orange/50 text-white hover:bg-gaming-orange/20"
-              >
-                Cancel
-              </Button>
-              <Button 
-                type="submit" 
-                className="gaming-button"
-                disabled={loading}
-              >
-                {loading ? "Saving..." : currentTournament ? "Update Tournament" : "Create Tournament"}
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
+        <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle>Edit Tournament</DialogTitle>
+              <DialogDescription>
+                Make changes to your tournament here. Click save when you're done.
+              </DialogDescription>
+            </DialogHeader>
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onEditTournament)} className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="tournamentName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Tournament Name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Tournament Name" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="gameName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Game Name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Game Name" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="platform"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Platform</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Platform" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="startDate"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-col">
+                        <FormLabel>Start Date</FormLabel>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <FormControl>
+                              <Button
+                                variant={"outline"}
+                                className={cn(
+                                  "w-[240px] pl-3 text-left font-normal",
+                                  !field.value && "text-muted-foreground"
+                                )}
+                              >
+                                {field.value ? (
+                                  format(new Date(field.value), "PPP")
+                                ) : (
+                                  <span>Pick a date</span>
+                                )}
+                                <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                              </Button>
+                            </FormControl>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <Calendar
+                              mode="single"
+                              selected={field.value ? new Date(field.value) : undefined}
+                              onSelect={(date) => field.onChange(date?.toISOString())}
+                              disabled={(date) =>
+                                date > new Date()
+                              }
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="endDate"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-col">
+                        <FormLabel>End Date</FormLabel>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <FormControl>
+                              <Button
+                                variant={"outline"}
+                                className={cn(
+                                  "w-[240px] pl-3 text-left font-normal",
+                                  !field.value && "text-muted-foreground"
+                                )}
+                              >
+                                {field.value ? (
+                                  format(new Date(field.value), "PPP")
+                                ) : (
+                                  <span>Pick a date</span>
+                                )}
+                                <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                              </Button>
+                            </FormControl>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <Calendar
+                              mode="single"
+                              selected={field.value ? new Date(field.value) : undefined}
+                              onSelect={(date) => field.onChange(date?.toISOString())}
+                              disabled={(date) =>
+                                date > new Date()
+                              }
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="startDateTime"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Start Time</FormLabel>
+                        <FormControl>
+                          <Input type="time" placeholder="Start Time" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="endDateTime"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>End Time</FormLabel>
+                        <FormControl>
+                          <Input type="time" placeholder="End Time" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="entryFee"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Entry Fee</FormLabel>
+                        <FormControl>
+                          <Input type="number" placeholder="Entry Fee" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="prizePool"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Prize Pool</FormLabel>
+                        <FormControl>
+                          <Input type="number" placeholder="Prize Pool" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <FormField
+                  control={form.control}
+                  name="tournamentType"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Tournament Type</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select a type" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="Solo">Solo</SelectItem>
+                          <SelectItem value="Duo">Duo</SelectItem>
+                          <SelectItem value="Squad">Squad</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="maxTeams"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Max Teams</FormLabel>
+                      <FormControl>
+                        <Input type="number" placeholder="Max Teams" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="description"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Description</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder="Tournament Description"
+                          className="resize-none"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="rules"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Rules</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder="Tournament Rules"
+                          className="resize-none"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="status"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Status</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select a status" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="Open">Open</SelectItem>
+                          <SelectItem value="Closed">Closed</SelectItem>
+                          <SelectItem value="Completed">Completed</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <DialogFooter>
+                  <Button type="submit">Edit Tournament</Button>
+                </DialogFooter>
+              </form>
+            </Form>
+          </DialogContent>
+        </Dialog>
 
-      {/* Delete Confirmation Dialog */}
-      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <DialogContent className="sm:max-w-md bg-gaming-darker text-white border-gaming-orange/20">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-bold">Confirm Deletion</DialogTitle>
-            <DialogDescription className="text-gray-400">
-              Are you sure you want to delete {currentTournament?.tournamentName}? This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex justify-end gap-3 pt-4">
-            <Button 
-              variant="outline" 
-              onClick={() => setIsDeleteDialogOpen(false)}
-              className="border-gaming-orange/50 text-white hover:bg-gaming-orange/20"
-            >
-              Cancel
-            </Button>
-            <Button 
-              variant="destructive"
-              onClick={handleDeleteTournament}
-              disabled={loading}
-            >
-              {loading ? "Deleting..." : "Delete Tournament"}
-            </Button>
+        {loading ? (
+          <p>Loading tournaments...</p>
+        ) : (
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[100px]">ID</TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Game</TableHead>
+                  <TableHead>Platform</TableHead>
+                  <TableHead>Start Date</TableHead>
+                  <TableHead>End Date</TableHead>
+                  <TableHead>Entry Fee</TableHead>
+                  <TableHead>Prize Pool</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {tournaments.map((tournament) => (
+                  <TableRow key={tournament.id}>
+                    <TableCell className="font-medium">{tournament.id}</TableCell>
+                    <TableCell>{tournament.tournamentName}</TableCell>
+                    <TableCell>{tournament.gameName}</TableCell>
+                    <TableCell>{tournament.platform}</TableCell>
+                    <TableCell>{formatDate(tournament.startDate)}</TableCell>
+                    <TableCell>{formatDate(tournament.endDate)}</TableCell>
+                    <TableCell>₹{tournament.entryFee}</TableCell>
+                    <TableCell>₹{tournament.prizePool}</TableCell>
+                    <TableCell>{tournament.status}</TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => onOpenEditModal(tournament)}
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => onDeleteTournament(tournament.id)}
+                        className="ml-2"
+                      >
+                        Delete
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </div>
-        </DialogContent>
-      </Dialog>
+        )}
+      </div>
     </div>
   );
 };

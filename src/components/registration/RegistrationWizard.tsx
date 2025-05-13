@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 import { doc, addDoc, collection, getDoc } from 'firebase/firestore';
@@ -86,7 +86,7 @@ const RegistrationWizard = ({ tournamentId }: RegistrationWizardProps) => {
   const [registrationId, setRegistrationId] = useState<string | null>(null);
 
   // Fetch tournament details
-  useState(() => {
+  useEffect(() => {
     const fetchTournamentDetails = async () => {
       try {
         const tournamentRef = doc(db, 'tournaments', tournamentId);
@@ -119,7 +119,7 @@ const RegistrationWizard = ({ tournamentId }: RegistrationWizardProps) => {
     };
     
     fetchTournamentDetails();
-  }, [tournamentId]);
+  }, [tournamentId, toast, navigate]);
 
   const updateFormData = (data: Partial<RegistrationData>) => {
     setFormData(prev => ({ ...prev, ...data }));
@@ -227,17 +227,40 @@ const RegistrationWizard = ({ tournamentId }: RegistrationWizardProps) => {
         exit={{ x: -20, opacity: 0 }}
         transition={{ duration: 0.3 }}
       >
-        <StepComponent 
-          formData={formData}
-          updateFormData={updateFormData}
-          nextStep={nextStep}
-          prevStep={prevStep}
-          handleSubmit={handleSubmitRegistration}
-          isLoading={isLoading}
-          registrationSuccess={registrationSuccess}
-          registrationId={registrationId}
-          upiLink={getUpiLink()}
-        />
+        {currentStep === 0 && (
+          <TeamInfoStep 
+            formData={formData}
+            updateFormData={updateFormData}
+            nextStep={nextStep}
+            prevStep={prevStep}
+          />
+        )}
+        {currentStep === 1 && (
+          <PlayersStep 
+            formData={formData}
+            updateFormData={updateFormData}
+            nextStep={nextStep}
+            prevStep={prevStep}
+          />
+        )}
+        {currentStep === 2 && (
+          <PaymentStep 
+            formData={formData}
+            updateFormData={updateFormData}
+            nextStep={nextStep}
+            prevStep={prevStep}
+            handleSubmit={handleSubmitRegistration}
+            isLoading={isLoading}
+            upiLink={getUpiLink()}
+          />
+        )}
+        {currentStep === 3 && (
+          <ConfirmationStep 
+            formData={formData}
+            registrationSuccess={registrationSuccess}
+            registrationId={registrationId}
+          />
+        )}
       </motion.div>
     </div>
   );
