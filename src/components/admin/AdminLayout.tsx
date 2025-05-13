@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { useAuth } from '@/contexts/AuthContext';
@@ -11,7 +11,8 @@ import {
   Settings,
   LogOut,
   Menu,
-  X
+  X,
+  Home
 } from 'lucide-react';
 
 const AdminLayout = () => {
@@ -19,6 +20,26 @@ const AdminLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+      if (window.innerWidth >= 768) {
+        setSidebarOpen(false);
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  useEffect(() => {
+    // Close sidebar when navigating on mobile
+    if (isMobile) {
+      setSidebarOpen(false);
+    }
+  }, [location.pathname, isMobile]);
 
   const handleSignOut = async () => {
     await signOut();
@@ -26,6 +47,7 @@ const AdminLayout = () => {
   };
 
   const navItems = [
+    { name: 'Website', path: '/', icon: <Home size={20} /> },
     { name: 'Tournaments', path: '/admin/tournaments', icon: <Calendar size={20} /> },
     { name: 'Champions', path: '/admin/champions', icon: <Trophy size={20} /> },
     { name: 'Teams', path: '/admin/teams', icon: <Users size={20} /> },
@@ -41,27 +63,30 @@ const AdminLayout = () => {
       </Helmet>
 
       {/* Mobile Header */}
-      <header className="md:hidden bg-gaming-darker py-4 px-6 flex justify-between items-center border-b border-gaming-orange/20">
+      <header className="md:hidden bg-gaming-darker py-4 px-6 flex justify-between items-center border-b border-gaming-orange/20 sticky top-0 z-50">
         <div className="flex items-center">
           <h1 className="text-xl font-bold">Admin Dashboard</h1>
         </div>
         <button 
           onClick={() => setSidebarOpen(!sidebarOpen)} 
           className="p-2 rounded-md hover:bg-gaming-orange/20"
+          aria-label={sidebarOpen ? "Close menu" : "Open menu"}
         >
           {sidebarOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
       </header>
 
-      <div className="flex">
+      <div className="flex h-[calc(100vh-64px)] md:h-screen">
         {/* Sidebar */}
         <aside className={`
-          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} 
-          md:translate-x-0 fixed md:static top-0 left-0 z-40 h-screen w-64 transition-transform
+          fixed md:static top-0 left-0 z-40 h-full w-64 
+          transform transition-transform duration-300 ease-in-out
+          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'} 
           bg-gaming-darker md:block border-r border-gaming-orange/20
+          md:h-screen overflow-y-auto
         `}>
           <div className="flex flex-col h-full p-4">
-            <div className="hidden md:flex items-center gap-2 py-6 px-4">
+            <div className="md:flex items-center gap-2 py-6 px-4 hidden">
               <span className="text-2xl font-bold text-gaming-orange">FF Arena</span>
             </div>
             
@@ -77,7 +102,7 @@ const AdminLayout = () => {
                       : 'text-gray-300 hover:bg-gaming-orange/20'
                     }
                   `}
-                  onClick={() => setSidebarOpen(false)}
+                  onClick={() => isMobile && setSidebarOpen(false)}
                 >
                   {item.icon}
                   <span>{item.name}</span>
@@ -85,7 +110,7 @@ const AdminLayout = () => {
               ))}
             </div>
             
-            <div className="border-t border-gaming-orange/20 pt-4">
+            <div className="border-t border-gaming-orange/20 pt-4 mt-auto">
               <Button 
                 variant="outline" 
                 className="w-full border-gaming-orange/30 hover:bg-gaming-orange/20 flex gap-2"
@@ -99,7 +124,7 @@ const AdminLayout = () => {
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 p-4 md:p-8 overflow-auto">
+        <main className="flex-1 p-4 md:p-8 overflow-auto h-full w-full">
           <Outlet />
         </main>
       </div>

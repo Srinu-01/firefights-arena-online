@@ -1,57 +1,79 @@
-import { useState } from 'react';
+
+import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import TournamentCard, { TournamentProps } from './TournamentCard';
 import { motion } from 'framer-motion';
-
-// Sample data for tournaments with correct type structure
-const sampleTournamentsData: TournamentProps[] = [
-  {
-    id: 'tourney_001',
-    title: 'Daily Custom #27',
-    mode: 'Squad (4v4)',
-    entryFee: 30,
-    prizePool: 500,
-    dateTime: '2025-06-01T19:00:00Z',
-    status: 'upcoming',
-    maxSlots: 25,
-    bannerUrl: 'https://dl.dir.freefiremobile.com/common/web_event/official2.ff.garena.all/202210/ce405ad07404fecfb3196b77822aec8b.jpg'
-  },
-  {
-    id: 'tourney_002',
-    title: 'Weekend Showdown #12',
-    mode: 'Squad (4v4)',
-    entryFee: 50,
-    prizePool: 1000,
-    dateTime: '2025-06-05T20:00:00Z',
-    status: 'upcoming',
-    maxSlots: 25,
-    bannerUrl: 'https://freefiremobile-a.akamaihd.net/common/web_event/official2.ff.garena.all/img/20228/2bc8496f63451357a571fbfa6c96f541.jpg'
-  },
-  {
-    id: 'tourney_003',
-    title: 'Elite Tournament',
-    mode: 'Duo (2v2)',
-    entryFee: 25,
-    prizePool: 300,
-    dateTime: '2025-06-03T18:30:00Z',
-    status: 'upcoming',
-    maxSlots: 50,
-    bannerUrl: 'https://freefiremobile-a.akamaihd.net/common/web_event/official2.ff.garena.all/img/20228/273ccca592700669c1532bd04f6f257a.jpg'
-  },
-  {
-    id: 'tourney_004',
-    title: 'Pro League Season 5',
-    mode: 'Squad (4v4)',
-    entryFee: 100,
-    prizePool: 2500,
-    dateTime: '2025-06-10T21:00:00Z',
-    status: 'upcoming',
-    maxSlots: 25,
-    bannerUrl: 'https://dl.dir.freefiremobile.com/common/web_event/official2.ff.garena.all/202210/768671f1dc8d3c0a8f2448cf5ed6739c.jpg'
-  }
-];
+import { collection, getDocs, query, where, Timestamp } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import { useToast } from '@/hooks/use-toast';
+import { Button } from './ui/button';
 
 const UpcomingTournaments = () => {
-  const [tournaments] = useState<TournamentProps[]>(sampleTournamentsData);
+  const [tournaments, setTournaments] = useState<TournamentProps[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
+  
+  useEffect(() => {
+    const fetchUpcomingTournaments = async () => {
+      setLoading(true);
+      try {
+        // Get today and tomorrow dates (for filtering)
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        
+        const dayAfterTomorrow = new Date(tomorrow);
+        dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 1);
+        
+        // Fetch tournaments from Firestore
+        const tournamentsCollection = collection(db, 'tournaments');
+        const tournamentSnapshot = await getDocs(tournamentsCollection);
+        
+        // Parse the documents and filter for tomorrow's tournaments
+        const allTournaments = tournamentSnapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            title: data.title || data.tournamentName || 'Unnamed Tournament',
+            mode: data.mode || data.tournamentType || 'Squad (4v4)',
+            entryFee: data.entryFee || 0,
+            prizePool: data.prizePool || 0,
+            dateTime: data.dateTime || data.startDateTime || new Date().toISOString(),
+            status: data.status || 'upcoming',
+            maxSlots: data.maxSlots || data.maxTeams || 25,
+            bannerUrl: data.bannerUrl || data.imageUrl || 'https://wallpapercave.com/wp/wp11213059.jpg'
+          } as TournamentProps;
+        });
+        
+        // Filter for tournaments happening tomorrow
+        const tomorrowTournaments = allTournaments.filter(tournament => {
+          const tournamentDate = new Date(tournament.dateTime);
+          return tournamentDate >= tomorrow && tournamentDate < dayAfterTomorrow;
+        });
+        
+        // Sort by time
+        tomorrowTournaments.sort((a, b) => {
+          return new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime();
+        });
+        
+        // Take only first 4 tournaments
+        setTournaments(tomorrowTournaments.slice(0, 4));
+      } catch (error) {
+        console.error('Error fetching upcoming tournaments:', error);
+        toast({
+          title: "Error",
+          description: "Failed to load upcoming tournaments.",
+          variant: "destructive"
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchUpcomingTournaments();
+  }, [toast]);
   
   const container = {
     hidden: { opacity: 0 },
@@ -67,6 +89,20 @@ const UpcomingTournaments = () => {
     hidden: { opacity: 0, y: 20 },
     show: { opacity: 1, y: 0, transition: { duration: 0.5 } }
   };
+
+  if (loading) {
+    return (
+      <div className="py-16 px-4 md:px-8 bg-gaming-darker/60 backdrop-blur-sm">
+        <div className="container mx-auto flex justify-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-gaming-orange"></div>
+        </div>
+      </div>
+    );
+  }
+
+  if (tournaments.length === 0) {
+    return null; // Don't show the section if there are no tournaments for tomorrow
+  }
 
   return (
     <div className="py-16 px-4 md:px-8 bg-gaming-darker/60 backdrop-blur-sm">
@@ -98,6 +134,16 @@ const UpcomingTournaments = () => {
             </motion.div>
           ))}
         </motion.div>
+        
+        {tournaments.length > 0 && (
+          <div className="flex justify-center mt-8">
+            <Link to="/tournaments">
+              <Button className="gaming-button">
+                View All Tournaments
+              </Button>
+            </Link>
+          </div>
+        )}
       </div>
     </div>
   );

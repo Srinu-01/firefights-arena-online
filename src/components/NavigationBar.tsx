@@ -34,8 +34,8 @@ const NavigationBar = () => {
             <Link to="/tournaments" className={`${isActive('/tournaments')} hover:text-gaming-orange transition-colors font-gaming uppercase font-bold`}>
               Tournaments
             </Link>
-            <Link to="/leaderboard" className={`${isActive('/leaderboard')} hover:text-gaming-orange transition-colors font-gaming uppercase font-bold`}>
-              Leaderboard
+            <Link to="/champions" className={`${isActive('/champions')} hover:text-gaming-orange transition-colors font-gaming uppercase font-bold`}>
+              Champions
             </Link>
             <Link to="/register" className={`${isActive('/register')} hover:text-gaming-orange transition-colors font-gaming uppercase font-bold`}>
               Register
@@ -70,8 +70,8 @@ const NavigationBar = () => {
             <Link to="/tournaments" className={`${isActive('/tournaments')} hover:text-gaming-orange transition-colors font-gaming uppercase font-bold flex items-center space-x-2`} onClick={() => setIsOpen(false)}>
               <Calendar size={20} /> <span>Tournaments</span>
             </Link>
-            <Link to="/leaderboard" className={`${isActive('/leaderboard')} hover:text-gaming-orange transition-colors font-gaming uppercase font-bold flex items-center space-x-2`} onClick={() => setIsOpen(false)}>
-              <Trophy size={20} /> <span>Leaderboard</span>
+            <Link to="/champions" className={`${isActive('/champions')} hover:text-gaming-orange transition-colors font-gaming uppercase font-bold flex items-center space-x-2`} onClick={() => setIsOpen(false)}>
+              <Trophy size={20} /> <span>Champions</span>
             </Link>
             <Link to="/register" className={`${isActive('/register')} hover:text-gaming-orange transition-colors font-gaming uppercase font-bold flex items-center space-x-2`} onClick={() => setIsOpen(false)}>
               <User size={20} /> <span>Register</span>
