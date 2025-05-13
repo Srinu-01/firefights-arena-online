@@ -1,9 +1,18 @@
 
 import { useState } from 'react';
 import TournamentCard, { TournamentProps } from './TournamentCard';
+import { motion } from 'framer-motion';
 
 // Sample data for demonstration
 const sampleTournaments: TournamentProps[] = [
+  { rank: 1, teamName: 'Elite Killers', playerName: 'SharpShooter', kills: 187, matches: 42, wins: 16, points: 1245 },
+  { rank: 2, teamName: 'Phoenix Squad', playerName: 'FireRaider', kills: 165, matches: 39, wins: 13, points: 1120 },
+  { rank: 3, teamName: 'Shadow Warriors', playerName: 'NightHawk', kills: 158, matches: 41, wins: 12, points: 1050 },
+  { rank: 4, teamName: 'Dragon Force', playerName: 'DragonFist', kills: 152, matches: 40, wins: 11, points: 980 },
+];
+
+// Sample data for demonstration
+const sampleTournamentsData: TournamentProps[] = [
   {
     id: 'tourney_001',
     title: 'Daily Custom #27',
@@ -51,19 +60,53 @@ const sampleTournaments: TournamentProps[] = [
 ];
 
 const UpcomingTournaments = () => {
-  const [tournaments] = useState<TournamentProps[]>(sampleTournaments);
+  const [tournaments] = useState<TournamentProps[]>(sampleTournamentsData);
+  
+  const container = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.2
+      }
+    }
+  };
+  
+  const item = {
+    hidden: { opacity: 0, y: 20 },
+    show: { opacity: 1, y: 0, transition: { duration: 0.5 } }
+  };
 
   return (
-    <div className="py-16 px-4 md:px-8">
+    <div className="py-16 px-4 md:px-8 bg-gaming-darker/60 backdrop-blur-sm">
       <div className="container mx-auto">
-        <h2 className="text-3xl font-bold text-white mb-2">UPCOMING TOURNAMENTS</h2>
-        <div className="w-20 h-1 bg-gaming-orange mb-8"></div>
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6 }}
+          className="text-center mb-12"
+        >
+          <h2 className="text-3xl lg:text-4xl font-bold text-white mb-2 relative inline-block">
+            UPCOMING TOURNAMENTS
+            <div className="h-1 bg-gradient-to-r from-gaming-orange/20 via-gaming-orange to-gaming-orange/20 w-full absolute bottom-0"></div>
+          </h2>
+          <p className="text-gray-300 mt-3 max-w-xl mx-auto">
+            Join our exciting tournaments and compete for glory and amazing prizes
+          </p>
+        </motion.div>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <motion.div 
+          variants={container}
+          initial="hidden"
+          animate="show"
+          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6"
+        >
           {tournaments.map((tournament) => (
-            <TournamentCard key={tournament.id} {...tournament} />
+            <motion.div key={tournament.id} variants={item}>
+              <TournamentCard {...tournament} />
+            </motion.div>
           ))}
-        </div>
+        </motion.div>
       </div>
     </div>
   );
